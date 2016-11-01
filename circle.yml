@@ -1,0 +1,3 @@
+test:
+  override:
+    - MYSQL_TEST_DBNAME=circle_test go test
