@@ -10,9 +10,12 @@ package mysql
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,11 +51,7 @@ func initDB(b *testing.B, queries ...string) *sql.DB {
 	db := tb.checkDB(sql.Open("mysql", dsn))
 	for _, query := range queries {
 		if _, err := db.Exec(query); err != nil {
-			if w, ok := err.(MySQLWarnings); ok {
-				b.Logf("warning on %q: %v", query, w)
-			} else {
-				b.Fatalf("error on %q: %v", query, err)
-			}
+			b.Fatalf("error on %q: %v", query, err)
 		}
 	}
 	return db
@@ -80,7 +79,6 @@ func BenchmarkQuery(b *testing.B) {
 	var wg sync.WaitGroup
 	wg.Add(concurrencyLevel)
 	defer wg.Wait()
-	b.ResetTimer()
 	b.StartTimer()
 
 	for i := 0; i < concurrencyLevel; i++ {
@@ -118,7 +116,6 @@ func BenchmarkExec(b *testing.B) {
 	var wg sync.WaitGroup
 	wg.Add(concurrencyLevel)
 	defer wg.Wait()
-	b.ResetTimer()
 	b.StartTimer()
 
 	for i := 0; i < concurrencyLevel; i++ {
@@ -247,27 +244,76 @@ func BenchmarkInterpolation(b *testing.B) {
 	}
 }
 
-func BenchmarkColumnConverter(b *testing.B) {
-	c := converter{}
-	args := []interface{}{
-		int64(42424242),
-		float64(math.Pi),
-		false,
-		time.Unix(1423411542, 807015000),
-		[]byte("bytes containing special chars ' \" \a \x00"),
-		"string containing special chars ' \" \a \x00",
-		uint64(math.MaxUint64),
-		uint64(123123123123123),
-	}
+func benchmarkQueryContext(b *testing.B, db *sql.DB, p int) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db.SetMaxIdleConns(p * runtime.GOMAXPROCS(0))
 
+	tb := (*TB)(b)
+	stmt := tb.checkStmt(db.PrepareContext(ctx, "SELECT val FROM foo WHERE id=?"))
+	defer stmt.Close()
+
+	b.SetParallelism(p)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for j := 0; j < len(args); j++ {
-			_, err := c.ConvertValue(args[j])
-			if err != nil {
+	b.RunParallel(func(pb *testing.PB) {
+		var got string
+		for pb.Next() {
+			tb.check(stmt.QueryRow(1).Scan(&got))
+			if got != "one" {
+				b.Fatalf("query = %q; want one", got)
+			}
+		}
+	})
+}
+
+func BenchmarkQueryContext(b *testing.B) {
+	db := initDB(b,
+		"DROP TABLE IF EXISTS foo",
+		"CREATE TABLE foo (id INT PRIMARY KEY, val CHAR(50))",
+		`INSERT INTO foo VALUES (1, "one")`,
+		`INSERT INTO foo VALUES (2, "two")`,
+	)
+	defer db.Close()
+	for _, p := range []int{1, 2, 3, 4} {
+		b.Run(fmt.Sprintf("%d", p), func(b *testing.B) {
+			benchmarkQueryContext(b, db, p)
+		})
+	}
+}
+
+func benchmarkExecContext(b *testing.B, db *sql.DB, p int) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db.SetMaxIdleConns(p * runtime.GOMAXPROCS(0))
+
+	tb := (*TB)(b)
+	stmt := tb.checkStmt(db.PrepareContext(ctx, "DO 1"))
+	defer stmt.Close()
+
+	b.SetParallelism(p)
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := stmt.ExecContext(ctx); err != nil {
 				b.Fatal(err)
 			}
 		}
+	})
+}
+
+func BenchmarkExecContext(b *testing.B) {
+	db := initDB(b,
+		"DROP TABLE IF EXISTS foo",
+		"CREATE TABLE foo (id INT PRIMARY KEY, val CHAR(50))",
+		`INSERT INTO foo VALUES (1, "one")`,
+		`INSERT INTO foo VALUES (2, "two")`,
+	)
+	defer db.Close()
+	for _, p := range []int{1, 2, 3, 4} {
+		b.Run(fmt.Sprintf("%d", p), func(b *testing.B) {
+			benchmarkQueryContext(b, db, p)
+		})
 	}
 }
