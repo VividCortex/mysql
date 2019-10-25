@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/VividCortex/mysql
     docker:
-      - image: 533203180649.dkr.ecr.us-west-2.amazonaws.com/circleci/golang:1.9.5
+      - image: circleci/golang:1.13.3
     environment:
       MYSQL_TEST_DBNAME: circle_test
     steps:
