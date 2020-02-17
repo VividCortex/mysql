@@ -234,7 +234,6 @@ func TestDSNTLSConfig(t *testing.T) {
 	if cfg.tls.ServerName != expectedServerName {
 		t.Errorf("cfg.tls.ServerName should be %q, got %q (host with port)", expectedServerName, cfg.tls.ServerName)
 	}
-}
 
 	dsn = "tcp(example.com)/?tls=true"
 	cfg, err = ParseDSN(dsn)
@@ -319,8 +318,6 @@ func TestParamsAreSorted(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
-=======
 func TestCloneConfig(t *testing.T) {
 	RegisterServerPubKey("testKey", testPubKeyRSA)
 	defer DeregisterServerPubKey("testKey")
@@ -405,7 +402,6 @@ func TestNormalizeTLSConfig(t *testing.T) {
 	}
 }
 
->>>>>>> v1.5.0
 func BenchmarkParseDSN(b *testing.B) {
 	b.ReportAllocs()
 

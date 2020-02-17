@@ -223,26 +223,6 @@ func appendMicrosecs(dst, src []byte, decimals int) []byte {
 			digits10[p3],
 		)
 	}
-	// +2 to enable negative time and 100+ hours
-	dst = make([]byte, 0, length+2)
-	if src[0] == 1 {
-		dst = append(dst, '-')
-	}
-	days := binary.LittleEndian.Uint32(src[1:5])
-	hours := int64(days)*24 + int64(src[5])
-
-	if hours >= 100 {
-		dst = strconv.AppendInt(dst, hours, 10)
-	} else {
-		dst = append(dst, digits10[hours], digits01[hours])
-	}
-
-	min, sec := src[6], src[7]
-	dst = append(dst, ':',
-		digits10[min], digits01[min], ':',
-		digits10[sec], digits01[sec],
-	)
-	return appendMicrosecs(dst, src[8:], int(length)-9), nil
 }
 
 func formatBinaryDateTime(src []byte, length uint8) (driver.Value, error) {
